@@ -5,6 +5,7 @@ from datetime import datetime
 import logging
 import coloredlogs
 import configparser
+import json
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,12 +25,13 @@ def read_api_key(config_file='config.ini'):
     config.read(config_file)
     return config['DEFAULT']['API_KEY']
 
-def get_random_video_ids(api_key, max_results=50):
+def get_random_video_ids(api_key, seen_ids, max_results=50):
     """
     Fetches a list of random YouTube video IDs based on a randomly chosen query topic.
 
     Args:
         api_key (str): API key for YouTube Data API.
+        seen_ids (set): Set of video IDs that have already been fetched.
         max_results (int): Maximum number of results to fetch.
 
     Returns:
@@ -55,10 +57,12 @@ def get_random_video_ids(api_key, max_results=50):
         raise Exception(f"Failed to fetch video data: HTTP {response.status_code}")
 
     search_results = response.json()
-    video_ids = [item['id']['videoId'] for item in search_results['items']]
-    logger.info(f"Fetched {len(video_ids)} video IDs")
 
-    return video_ids
+    # Filter out already seen IDs
+    new_video_ids = [item['id']['videoId'] for item in search_results['items'] if item['id']['videoId'] not in seen_ids]
+    logger.info(f"Fetched {len(new_video_ids)} new video IDs")
+
+    return new_video_ids
 
 def check_video_restrictions(api_key, video_ids):
     """
@@ -89,23 +93,45 @@ def check_video_restrictions(api_key, video_ids):
 
     return restricted_videos
 
+def save_json_history(data, filename='video_history.json'):
+    """
+    Saves the video history to a JSON file.
+
+    Args:
+        data (dict): Video history data.
+        filename (str): Path to the JSON file.
+    """
+    with open(filename, 'w') as file:
+        json.dump(data, file, indent=4)
+    logger.info(f"JSON history saved to {filename}")
+
+# 
+# Main
+#
 if __name__ == '__main__':
     api_key = read_api_key()
 
+    seen_ids = set()  # To track already fetched video IDs
+    video_history = {}  # To maintain a JSON history
     restricted_videos = []
+
     try:
         while len(restricted_videos) < 50:
-            video_ids = get_random_video_ids(api_key)
+            video_ids = get_random_video_ids(api_key, seen_ids)
             restricted_data = check_video_restrictions(api_key, video_ids)
             restricted_videos.extend(restricted_data)
+            seen_ids.update(video_ids)  # Update the seen IDs
 
-            # Log progress
+            # Update video history
+            for video in restricted_data:
+                video_history[video['Video ID']] = video['Restrictions']
+
             logger.info(f"Collected {len(restricted_videos)} restricted videos so far.")
 
     except Exception as e:
         logger.error(f"Error: {e}")
 
-    if len(restricted_videos) > 0:
+    if restricted_videos:
         # Convert to DataFrame
         df = pd.DataFrame(restricted_videos)
 
@@ -116,3 +142,6 @@ if __name__ == '__main__':
         filename = f'youtube_video_restrictions_{timestamp}.csv'
         df.to_csv(filename, index=False)
         logger.info(f"Data saved to {filename}")
+
+        # Save the history to a JSON file
+        save_json_history(video_history)
