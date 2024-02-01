@@ -6,6 +6,7 @@ import logging
 import coloredlogs
 import configparser
 import json
+import os
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -93,6 +94,22 @@ def check_video_restrictions(api_key, video_ids):
 
     return restricted_videos
 
+def load_json_history(filename='video_history.json'):
+    """
+    Loads the video history from a JSON file.
+
+    Args:
+        filename (str): Path to the JSON file.
+
+    Returns:
+        dict: Video history data.
+    """
+    if os.path.exists(filename):
+        with open(filename, 'r') as file:
+            return json.load(file)
+    else:
+        return {}
+
 def save_json_history(data, filename='video_history.json'):
     """
     Saves the video history to a JSON file.
@@ -111,8 +128,8 @@ def save_json_history(data, filename='video_history.json'):
 if __name__ == '__main__':
     api_key = read_api_key()
 
-    seen_ids = set()  # To track already fetched video IDs
-    video_history = {}  # To maintain a JSON history
+    video_history = load_json_history()  # Load the history from the JSON file
+    seen_ids = set(video_history.keys())  # Initialize seen_ids with history
     restricted_videos = []
 
     try:
